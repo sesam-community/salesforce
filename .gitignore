@@ -1,2 +1,4 @@
 .idea/*
 service/.idea/*
+venv/
+test/
