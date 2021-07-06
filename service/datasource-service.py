@@ -29,7 +29,7 @@ class DataAccess:
     def get_entities(self, since, datatype, sf):
         if self._entities.get(datatype, []) == []:
             try:
-            fields = getattr(sf, datatype).describe()["fields"]
+                fields = getattr(sf, datatype).describe()["fields"]
             except SalesforceResourceNotFound as e:
                 abort(404)
             self._entities[datatype] = fields
@@ -82,12 +82,14 @@ class DataAccess:
 
 data_access_layer = DataAccess()
 
-def get_var(var):
+def get_var(var, scope=None, is_required=False):
     envvar = None
-    if var.upper() in os.environ:
-        envvar = os.environ[var.upper()]
-    else:
+    if (scope is None or scope=="REQUEST"):
         envvar = request.args.get(var)
+    elif (scope is None or scope=="ENV") and var.upper() in os.environ:
+        envvar = os.environ.get(var.upper())
+    if is_required and envvar is None:
+        abort(400, "cannot read required '%s' in request params or envvar" % (var.upper()))
     logger.info("Setting %s = %s" % (var, envvar))
     return envvar
 
@@ -102,57 +104,45 @@ def requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        if not auth:
+        if not auth and not(get_var("USERNAME", "ENV") and get_var("PASSWORD", "ENV") and get_var("SECURITY_TOKEN", "ENV")):
             return authenticate()
         return f(*args, **kwargs)
 
     return decorated
 
+def get_sf():
+    if request.authorization:
+        auth = request.authorization
+    else:
+        auth =  {
+            "username": get_var("SECURITY_TOKEN", "ENV") + "\\" + get_var("USERNAME", "ENV"), 
+            "password": get_var("PASSWORD", "ENV")
+            }
+    logger.debug(str(auth))
+    token, username = auth['username'].split("\\", 1)
+    password = auth['password']
+
+    instance = get_var('instance') or "prod"
+    if instance == "sandbox":
+        sf = Salesforce(username, password, token, domain='test')
+    else:
+        sf = Salesforce(username, password, token)
+    return sf
+
 @app.route('/<datatype>', methods=['GET'])
 @requires_auth
 def get_entities(datatype):
     since = request.args.get('since')
-    instance = get_var('instance') or "prod"
-    use_sandbox = False
-    if instance == "sandbox":
-        use_sandbox = True
-        logger.info("Using sandbox")
-    auth = request.authorization
-    token, username = auth.username.split('\\', 1)
-    password = auth.password
-    logger.info("User = %s" % (auth.username))
-    if use_sandbox:
-        sf = Salesforce(username, password, token, domain='test')
-    else:
-        sf = Salesforce(username, password, token)
-
+    sf = get_sf()
     entities = sorted(data_access_layer.get_entities(since, datatype, sf), key=lambda k: k["_updated"])
-
     return Response(json.dumps(entities), mimetype='application/json')
-
-
 
 @app.route('/<datatype>', methods=['POST'])
 @requires_auth
 def receiver(datatype):
     # get entities from request and write each of them to a file
     entities = request.get_json()
-    app.logger.info("Updating entity of type %s" % (datatype))
-    app.logger.debug(json.dumps(entities))
-    instance = get_var('instance') or "prod"
-    use_sandbox = False
-    if instance == "sandbox":
-        use_sandbox = True
-        logger.info("Using sandbox")
-    auth = request.authorization
-    logger.info("User = %s" % (auth.username))
-    token, username = auth.username.split('\\', 1)
-    if use_sandbox:
-        sf = Salesforce(username, auth.password, token, domain='test')
-    else:
-        sf = Salesforce(username, auth.password, token)
-
-
+    sf = get_sf()
     if getattr(sf, datatype):
         transform(datatype, entities, sf)# create the response
     return Response("Thanks!", mimetype='text/plain')
