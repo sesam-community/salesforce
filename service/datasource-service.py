@@ -6,7 +6,7 @@ import os
 
 import json
 import pytz
-from simple_salesforce import Salesforce
+from simple_salesforce import Salesforce,  SalesforceResourceNotFound
 import iso8601
 import logging
 from collections import OrderedDict
@@ -24,13 +24,14 @@ def to_transit_datetime(dt_int):
 
 class DataAccess:
     def __init__(self):
-        self._entities = {"Activity": [], "Contact": [], "Account": [], "Lead": [], "Task": [], "Event": [], "Group": [], "Opportunity": [], "User": [], "EventRelation": [], "Case": [], "Campaign": [],"CampaignMember": []}
+        self._entities = {}
 
     def get_entities(self, since, datatype, sf):
-        if not datatype in self._entities:
-            abort(404)
-        if self._entities[datatype] == []:
+        if self._entities.get(datatype, []) == []:
+            try:
             fields = getattr(sf, datatype).describe()["fields"]
+            except SalesforceResourceNotFound as e:
+                abort(404)
             self._entities[datatype] = fields
         if since is None:
             return self.get_entitiesdata(datatype, since, sf)
