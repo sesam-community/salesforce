@@ -1,5 +1,5 @@
 FROM python:3
-MAINTAINER Graham Moore "graham.moore@sesam.io"
+LABEL maintainer="[https://github.com/sesam-community | sesam-community]"
 RUN pip3 install --upgrade pip
 COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt

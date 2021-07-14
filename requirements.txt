@@ -1,5 +1,4 @@
-Flask==0.11
-xmltodict
+Flask==2.0.1
 pytz
 simple-salesforce
 iso8601
