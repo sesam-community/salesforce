@@ -10,10 +10,12 @@ from simple_salesforce import Salesforce,  SalesforceResourceNotFound
 import iso8601
 import logging
 from collections import OrderedDict
+from sesamutils import sesam_logger
+from sesamutils.flask import serve
 
 app = Flask(__name__)
 
-logger = None
+logger = sesam_logger("salesforce")
 
 def datetime_format(dt):
     return '%04d' % dt.year + dt.strftime("-%m-%dT%H:%M:%SZ")
@@ -90,7 +92,6 @@ def get_var(var, scope=None, is_required=False):
         envvar = os.environ.get(var.upper())
     if is_required and envvar is None:
         abort(400, "cannot read required '%s' in request params or envvar" % (var.upper()))
-    logger.info("Setting %s = %s" % (var, envvar))
     return envvar
 
 def authenticate():
@@ -118,7 +119,6 @@ def get_sf():
             "username": get_var("SECURITY_TOKEN", "ENV") + "\\" + get_var("USERNAME", "ENV"), 
             "password": get_var("PASSWORD", "ENV")
             }
-    logger.debug(str(auth))
     token, username = auth['username'].split("\\", 1)
     password = auth['password']
 
@@ -200,16 +200,8 @@ def transform(datatype, entities, sf):
 
 
 if __name__ == '__main__':
-    # Set up logging
-    format_string = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    logger = logging.getLogger('salesforce-microservice')
-
-    # Log to stdout
-    stdout_handler = logging.StreamHandler()
-    stdout_handler.setFormatter(logging.Formatter(format_string))
-    logger.addHandler(stdout_handler)
-
-    logger.setLevel(logging.DEBUG)
-
-    app.run(debug=True, host='0.0.0.0')
+    if get_var("WEBFRAMEWORK", "ENV") == "FLASK":
+        app.run(debug=True, host='0.0.0.0')
+    else:
+        serve(app)
 

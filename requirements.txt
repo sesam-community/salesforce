@@ -4,3 +4,4 @@ pytz
 simple-salesforce
 iso8601
 python-dateutil
+sesamutils==0.1.10
