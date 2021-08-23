@@ -13,6 +13,7 @@ Sesam-Salesforce connector that can be used to:
 | USERNAME | username for login | yes | n/a |
 | PASSWORD | password for login | yes | n/a |
 | SECURITY_TOKEN | security token for login. obtained from the profile page of the user | yes | n/a |
+| LOGIN_CONFIG | a dict with keys _USERNAME, PASSWORD, SECURITY_TOKEN_ so that login details are kept in only 1 secret | yes | n/a |
 | WEBFRAMEWORK | set to 'FLASK' to use flask, otherwise it will run on cherrypy | no | n/a |
 | LOG_LEVEL | LOG_LEVEL. one of [CRITICAL\|ERROR\|WARNING\|INFO\|DEBUG] | no | 'INFO' |
 | INSTANCE | salesforce instance. set to 'sandbox' to work on test domain. Otherwise it will be non-test domain. | no | 'prod' |

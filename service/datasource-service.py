@@ -160,7 +160,9 @@ def requires_auth(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.authorization
-        if not auth and not(get_var("USERNAME", "ENV") and get_var("PASSWORD", "ENV") and get_var("SECURITY_TOKEN", "ENV")):
+        if not auth and (
+            not(get_var("USERNAME", "ENV") and get_var("PASSWORD", "ENV") and get_var("SECURITY_TOKEN", "ENV"))
+            and not get_var("LOGIN_CONFIG", "ENV")):
             return authenticate()
         return f(*args, **kwargs)
 
@@ -169,6 +171,12 @@ def requires_auth(f):
 def get_sf():
     if request.authorization:
         auth = request.authorization
+    elif get_var("LOGIN_CONFIG", "ENV"):
+        login_config = json.loads(get_var("LOGIN_CONFIG", "ENV"))
+        auth =  {
+            "username": login_config["SECURITY_TOKEN"] + "\\" + login_config["USERNAME"],
+            "password": login_config["PASSWORD"]
+            }
     else:
         auth =  {
             "username": get_var("SECURITY_TOKEN", "ENV") + "\\" + get_var("USERNAME", "ENV"),
