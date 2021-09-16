@@ -17,7 +17,8 @@ app = Flask(__name__)
 
 logger = sesam_logger("salesforce")
 
-SF_OBJECTS_CONFIG =  json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
+SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
+VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
 
 def datetime_format(dt):
     return '%04d' % dt.year + dt.strftime("-%m-%dT%H:%M:%SZ")
@@ -192,22 +193,32 @@ def get_sf():
         sf = Salesforce(username, password, token)
     return sf
 
+def get_path_for_valueset(req):
+    path_prefix_for_alias = "/ValueSet/SesamAlias/"
+    if req.path.startswith(path_prefix_for_alias):
+        alias = request.path.replace(path_prefix_for_alias,"")
+        path = VALUESET_LIST.get(alias)
+        if not path:
+            abort(500, "cannot map alias to SF id")
+        return path
+    else:
+        return request.path.replace("/ValueSet", "")
 
 @app.route('/ValueSet', methods=["GET"], endpoint="get_valueset_all")
 @app.route('/ValueSet/', methods=["GET"], endpoint="get_valueset_all/")
-@app.route('/ValueSet/CustomField/<field_id>', methods=["GET"], endpoint="get_custom_valueset_by_id")
-@app.route('/ValueSet/GlobalValueSet/<field_id>', methods=["GET"], endpoint="get_global_valueset_by_id")
+@app.route('/ValueSet/CustomField/<sf_id_or_alias>', methods=["GET"], endpoint="get_custom_valueset_by_id")
+@app.route('/ValueSet/GlobalValueSet/<sf_id_or_alias>', methods=["GET"], endpoint="get_global_valueset_by_id")
+@app.route('/ValueSet/SesamAlias/<sf_id_or_alias>', methods=["GET"], endpoint="get_valueset_by_alias")
 @requires_auth
-def valueset_execute(field_id=None):
+def valueset_execute(sf_id_or_alias=None):
     try:
         sf = get_sf()
 
-        path = request.path.replace("/ValueSet", "")
+        path = get_path_for_valueset(request)
         do_refine = request.args.get("do_refine", "1").lower() not in ["0", "false", "no"]
 
         if request.endpoint.startswith("get_valueset_all"):
-            delimiter = get_var("DELIMITER")
-            input_list = get_var("VALUESET_LIST", is_required=True).split(delimiter)
+            input_list = VALUESET_LIST.values()
         else:
             input_list = [path]
         output_list = []
@@ -239,10 +250,11 @@ def valueset_execute(field_id=None):
 
 @app.route('/ValueSet', methods=["POST"], endpoint="valueset_by_path_field")
 @app.route('/ValueSet/', methods=["POST"], endpoint="valueset_by_path_field/")
-@app.route('/ValueSet/CustomField/<field_id>', methods=["POST"], endpoint="custom_valueset_by_id")
-@app.route('/ValueSet/GlobalValueSet/<field_id>', methods=["POST"], endpoint="global_valueset_by_id")
+@app.route('/ValueSet/CustomField/<sf_id_or_alias>', methods=["POST"], endpoint="custom_valueset_by_id")
+@app.route('/ValueSet/GlobalValueSet/<sf_id_or_alias>', methods=["POST"], endpoint="global_valueset_by_id")
+@app.route('/ValueSet/SesamAlias/<sf_id_or_alias>', methods=["POST"], endpoint="valueset_by_alias")
 @requires_auth
-def valueset_execute_non_get(field_id=None):
+def valueset_execute_non_get(sf_id_or_alias=None):
     READONLY_FIELDS = ["Id",
         "DeveloperName",
         "MasterLabel",
@@ -262,7 +274,7 @@ def valueset_execute_non_get(field_id=None):
         sf = get_sf()
 
         do_read_path_from_data = request.endpoint.startswith("valueset_by_path_field")
-        path = None if do_read_path_from_data else request.path.replace("/ValueSet", "")
+        path = None if do_read_path_from_data else get_path_for_valueset(request)
 
         data = request.get_json()
         data = data if isinstance(data, list) else [data]
