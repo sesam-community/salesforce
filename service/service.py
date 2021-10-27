@@ -15,7 +15,7 @@ from sesamutils.flask import serve
 
 app = Flask(__name__)
 
-logger = sesam_logger("salesforce")
+logger = sesam_logger("salesforce", app=app)
 
 SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
@@ -74,7 +74,6 @@ class DataAccess:
         now = datetime.now(pytz.UTC)
         entities = []
         end = datetime.now(pytz.UTC)  # we need to use UTC as salesforce API requires this
-        logger.debug(f"objectkey={objectkey}, datatype={datatype}")
         if objectkey:
             obj = getattr(sf, datatype).get(objectkey)
             return [self.sesamify(obj, datatype)]
@@ -141,12 +140,12 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
         operation = "DELETE" if e.get("_deleted", False) or operation_in == "DELETE" else operation_in
         object, objectkey = _get_object_key(e, objectkey_in)
 
-        app.logger.debug(f"performing {operation} on {datatype}/{objectkey}")
+        logger.debug(f"performing {operation} on {datatype}/{objectkey}")
         if operation == "DELETE":
             try:
                 getattr(sf, datatype).delete(objectkey)
             except Exception as err:
-                app.logger.debug(f"{datatype}/{objectkey} received exception of type {type(err).__name__}")
+                logger.debug(f"{datatype}/{objectkey} received exception of type {type(err).__name__}")
         else:
             getattr(sf, datatype).upsert(objectkey, object)
 
