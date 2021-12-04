@@ -19,6 +19,7 @@ logger = sesam_logger("salesforce", app=app)
 
 SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
+API_VERSION = os.environ.get("API_VERSION","52.0")
 
 def datetime_format(dt):
     return '%04d' % dt.year + dt.strftime("-%m-%dT%H:%M:%SZ")
@@ -41,8 +42,8 @@ class DataAccess:
         self._entities = {}
 
     def sesamify(self, entity, datatype=None):
-        entity.update({"_id": entity["Id"]})
-        entity.update({"_updated": "%s" % entity["LastModifiedDate"]})
+        entity.update({"_id": entity.get("Id")})
+        entity.update({"_updated": "%s" % entity.get("LastModifiedDate")})
 
         for property, value in entity.items():
             schema = [item for item in self._entities.get(datatype, []) if item.get("name") == property]
@@ -187,9 +188,9 @@ def get_sf():
 
     instance = get_var('instance') or "prod"
     if instance == "sandbox":
-        sf = Salesforce(username, password, token, domain='test')
+        sf = Salesforce(username, password, token, domain='test', version=API_VERSION)
     else:
-        sf = Salesforce(username, password, token)
+        sf = Salesforce(username, password, token, version=API_VERSION)
     return sf
 
 def get_path_for_valueset(req):
@@ -335,7 +336,23 @@ def tooling_execute(path):
         logger.exception(err)
         return Response(str(err), mimetype='plain/text', status=500)
 
+@app.route('/sf/rest/<path:path>', methods=['GET', 'POST', 'DELETE', 'PATCH'], endpoint="restful")
+@requires_auth
+def restful(path=None):
+    try:
+        sf = get_sf()
+        response_data = sf.restful(path, request.args, request.method, json=request.get_json())
+        return Response(json.dumps(response_data), mimetype='application/json')
+    except SalesforceError as err:
+        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
+            mimetype='application/json',
+            status=err.status)
+    except Exception as err:
+        return Response(str(err), mimetype='plain/text', status=500)
+
+
 @app.route('/<datatype>', methods=['GET'], endpoint="get_all")
+@app.route('/<datatype>/<objectkey>', methods=['GET'], endpoint="get_by_id")
 @app.route('/<datatype>/<objectkey>', methods=['GET'], endpoint="get_by_id")
 @app.route('/<datatype>/<ext_id_field>/<ext_id>', methods=['GET'], endpoint="get_by_ext_id")
 @requires_auth
@@ -378,8 +395,11 @@ def receiver(datatype, objectkey=None, ext_id_field=None, ext_id=None):
 
 if __name__ == '__main__':
     PORT = int(get_var('PORT', "ENV") or 5000)
+    username = json.loads(get_var("LOGIN_CONFIG", "ENV")).get("USERNAME") if get_var("LOGIN_CONFIG", "ENV") else get_var("USERNAME", "ENV")
+    logger.info(f"Starting opp with USERNAME={username}")
+
     if get_var("WEBFRAMEWORK", "ENV") == "FLASK":
         app.run(debug=True, host='0.0.0.0', port=PORT)
     else:
         serve(app, port=PORT)
-
+    
