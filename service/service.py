@@ -20,6 +20,7 @@ logger = sesam_logger("salesforce", app=app)
 SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
 API_VERSION = os.environ.get("API_VERSION","52.0")
+DEFAULT_BULK_SWITCH_THRESHOLD = int(os.environ.get("DEFAULT_BULK_SWITCH_THRESHOLD", 2000))
 
 def datetime_format(dt):
     return '%04d' % dt.year + dt.strftime("-%m-%dT%H:%M:%SZ")
@@ -103,6 +104,16 @@ class DataAccess:
 data_access_layer = DataAccess()
 
 def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
+    def _get_unsesamified_object(entity):
+        d = []
+        for p in entity.keys():
+            if p.startswith("_"):
+                d.append(p)
+        for p in d:
+            del(entity[p])
+
+        return entity
+
     def _get_object_key(entity, objectkey_in=None):
         '''if 'Id' is specified, use 'Id' as key,
             else pick the first external id field that has a value'''
@@ -121,12 +132,11 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
         if not key:
             abort(500,"cannot figure out the objectkey for %s" % (entity))
         #remove fields starting with '_'
-        d = []
-        for p in entity.keys():
-            if p.startswith("_") or p in ["Id", key_field]:
-                d.append(p)
-        for p in d:
-            del(entity[p])
+        entity = _get_unsesamified_object(entity)
+        if "Id" in entity:
+            del(entity["Id"])
+        if key_field in entity:
+            del(entity[key_field])
 
         return entity, key
 
@@ -137,18 +147,64 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
         listing.append(entities)
     else:
         listing = entities
-    for e in listing:
-        operation = "DELETE" if e.get("_deleted", False) or operation_in == "DELETE" else operation_in
-        object, objectkey = _get_object_key(e, objectkey_in)
 
-        logger.debug(f"performing {operation} on {datatype}/{objectkey}")
-        if operation == "DELETE":
-            try:
-                getattr(sf, datatype).delete(objectkey)
-            except Exception as err:
-                logger.debug(f"{datatype}/{objectkey} received exception of type {type(err).__name__}")
-        else:
-            getattr(sf, datatype).upsert(objectkey, object)
+    doBulk = False
+    bulk_switch_threshold = DEFAULT_BULK_SWITCH_THRESHOLD
+    if datatype in SF_OBJECTS_CONFIG:
+        bulk_switch_threshold = SF_OBJECTS_CONFIG[datatype].get("bulk_switch_threshold", DEFAULT_BULK_SWITCH_THRESHOLD)
+    doBulk = bulk_switch_threshold < len(listing)
+
+    if doBulk:
+        deleteListPerExternalId = {}
+        upsertListPerExternalId = {}
+        singleDeleteListPerExternalId = {}
+        for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
+            deleteListPerExternalId[k] = []
+            upsertListPerExternalId[k] = []
+            singleDeleteListPerExternalId[k] = []
+        for e in listing:
+            externalIdField = "Id"
+            for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
+                if e.get(k):
+                    externalIdField = k
+            if e.get("_deleted", False) or operation_in == "DELETE":
+                if e.get("Id"):
+                    deleteListPerExternalId[externalIdField].append(_get_unsesamified_object(e))
+                else:
+                    singleDeleteListPerExternalId[externalIdField].append(f"{e[externalIdField]}")
+            else:
+                upsertListPerExternalId[externalIdField].append(_get_unsesamified_object(e))
+
+        for k,v in ({"deleteListPerExternalId":deleteListPerExternalId,
+                    "upsertListPerExternalId":upsertListPerExternalId,
+                    "singleDeleteListPerExternalId": singleDeleteListPerExternalId}).items():
+            for vk in v.keys():
+                logger.debug(f"length of {k}({vk}) = {str(len(v.get(vk)))}")
+        for externalId in deleteListPerExternalId.keys():
+            if deleteListPerExternalId.get(externalId):
+                getattr(sf.bulk, datatype).delete(deleteListPerExternalId.get(externalId), externalId, batch_size=10000, use_serial=True)
+        for externalId in upsertListPerExternalId.keys():
+            if upsertListPerExternalId.get(externalId):
+                getattr(sf.bulk, datatype).upsert(upsertListPerExternalId.get(externalId), externalId, batch_size=10000, use_serial=True)
+        for externalId in singleDeleteListPerExternalId.keys():
+            if singleDeleteListPerExternalId.get(externalId):
+                for objectkey in singleDeleteListPerExternalId.get(externalId):
+                    logger.debug(f"deleting {externalId}/{objectkey}")
+                    getattr(sf, datatype).delete(f"{externalId}/{objectkey}")
+
+    else:
+        for e in listing:
+            operation = "DELETE" if e.get("_deleted", False) or operation_in == "DELETE" else operation_in
+            object, objectkey = _get_object_key(e, objectkey_in)
+
+            logger.debug(f"performing {operation} on {datatype}/{objectkey}")
+            if operation == "DELETE":
+                try:
+                    getattr(sf, datatype).delete(objectkey)
+                except Exception as err:
+                    logger.debug(f"{datatype}/{objectkey} received exception of type {type(err).__name__}")
+            else:
+                getattr(sf, datatype).upsert(objectkey, object)
 
 def authenticate():
     """Sends a 401 response that enables basic auth"""
@@ -402,4 +458,3 @@ if __name__ == '__main__':
         app.run(debug=True, host='0.0.0.0', port=PORT)
     else:
         serve(app, port=PORT)
-    

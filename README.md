@@ -19,6 +19,7 @@ Sesam-Salesforce connector that can be used to:
 | INSTANCE | salesforce instance. set to 'sandbox' to work on test domain. Otherwise it will be non-test domain. | no | 'prod' |
 | VALUESET_LIST | a dict where keys are the aliases to be used in sesam and values are the paths to the corresponding valueset. Used when fetching all valusets and for patching. e.g.`{"my_global_vs": "GlobalValueSet/0Nt5I0000008cw7SAA", "my_custom_vs": "CustomField/00N5I000004yDnkUAE"}`| no | n/a |
 | SF_OBJECTS_CONFIG | dict for object level customizations. see schemas section for description. | no | n/a |
+| DEFAULT_BULK_SWITCH_THRESHOLD | Integer. Threshold value to swith to bulk-api instead of rest-api. | no | 2000 |
 
 
 ## ENDPOINTS
