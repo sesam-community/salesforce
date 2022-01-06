@@ -1,4 +1,4 @@
 # salesforce
 Sesam datasource that reads data from Salesforce
 
-[![Build Status](https://travis-ci.org/sesam-community/salesforce.svg?branch=master)](https://travis-ci.org/sesam-community/salesforce)
+[![SesamCommunity CI&CD](https://github.com/sesam-community/salesforce/actions/workflows/sesam-community-ci-cd.yml/badge.svg)](https://github.com/sesam-community/salesforce/actions/workflows/sesam-community-ci-cd.yml)
