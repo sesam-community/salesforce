@@ -190,7 +190,13 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
             if singleDeleteListPerExternalId.get(externalId):
                 for objectkey in singleDeleteListPerExternalId.get(externalId):
                     logger.debug(f"deleting {externalId}/{objectkey}")
-                    getattr(sf, datatype).delete(f"{externalId}/{objectkey}")
+                    try:
+                        getattr(sf, datatype).delete(f"{externalId}/{objectkey}")
+                    except SalesforceResourceNotFound as err:
+                        None
+                    except Exception as err:
+                        logger.debug(f"{datatype}/{externalId}/{objectkey} received exception of type {type(err).__name__}")
+
 
     else:
         for e in listing:
@@ -201,6 +207,8 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
             if operation == "DELETE":
                 try:
                     getattr(sf, datatype).delete(objectkey)
+                except SalesforceResourceNotFound as err:
+                        None
                 except Exception as err:
                     logger.debug(f"{datatype}/{objectkey} received exception of type {type(err).__name__}")
             else:
