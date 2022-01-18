@@ -19,7 +19,7 @@ Sesam-Salesforce connector that can be used to:
 | INSTANCE | salesforce instance. set to 'sandbox' to work on test domain. Otherwise it will be non-test domain. | no | 'prod' |
 | VALUESET_LIST | a dict where keys are the aliases to be used in sesam and values are the paths to the corresponding valueset. Used when fetching all valusets and for patching. e.g.`{"my_global_vs": "GlobalValueSet/0Nt5I0000008cw7SAA", "my_custom_vs": "CustomField/00N5I000004yDnkUAE"}`| no | n/a |
 | SF_OBJECTS_CONFIG | dict for object level customizations. see schemas section for description. | no | n/a |
-| DEFAULT_BULK_SWITCH_THRESHOLD | Integer. Threshold value to swith to bulk-api instead of rest-api. | no | 2000 |
+| DEFAULT_BULK_SWITCH_THRESHOLD | Integer. Threshold value on the number of incoming entities to swith to bulk-api instead of rest-api.Disabled if not set. | no | None |
 
 
 ## ENDPOINTS
@@ -28,13 +28,14 @@ Sesam-Salesforce connector that can be used to:
 
     By default _Id_ is used to match target object. If _Id_ is not available to Sesam, the _SF_OBJECTS_CONFIG_ envvar can be configured for alternative match keys.
 
-    * "GET": returns all data(upserted and deleted) of type _datatype_._Id_ and _LastModifiedDate_ is set as _\_id_ and _\_updated_, respectively.
+    * "GET": returns all data(upserted and deleted) of type _datatype_. Response is streamed, thus the response will give 200 status but malformed body when error is encountered._Id_ and _SystemModstamp_ is set as _\_id_ and _\_updated_, respectively.
     * "POST", "PUT", "PATCH": upserts objects or deletes if _\_deleted_ is true. Accepts dict or list of dicts.
     * "DELETE": deletes incoming objects.
 
     #### query params
-    `since`: Optional. Data updated after _since_ value will be delivered. CAnnot be older then 30 days ago due to Salesforce REST API limitations.
-
+    * `since`: Optional. Data updated after _since_ value will be delivered. CAnnot be older then 30 days ago due to Salesforce REST API limitations.
+    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.
+    
 ___
 
  2. `/<datatype>/<ext_id_field>/<ext_id>`, methods=["GET", "POST", "PUT", "PATCH", "DELETE"]
@@ -124,4 +125,57 @@ ___
 		]
 	}
 ]
+```
+
+Example configs:
+
+### system:
+```
+{
+  "_id": "salesforce",
+  "type": "system:microservice",
+  "metadata": {
+    "tags": ["salesforce"]
+  },
+  "connect_timeout": 60,
+  "docker": {
+    "environment": {
+      "DEFAULT_BULK_SWITCH_THRESHOLD": 999,
+      "INSTANCE": "sandbox",
+      "LOGIN_CONFIG": "$SECRET(salesforce_login_config)",
+      "LOG_LEVEL": "DEBUG",
+      "SF_OBJECTS_CONFIG": {
+        "Account": {
+          "ordered_key_fields": ["myExternalIdFieldForAccount1", "myExternalIdFieldForAccount2", "myExternalIdFieldForAccount3"]
+        },
+        "Case": {
+          "ordered_key_fields": ["myExternalIdFieldFroCaseObject1"]
+        }
+      }
+    },
+    "image": "sesamcommunity/salesforce:2.0.0",
+    "memory": 8192,
+    "port": 5000
+  },
+  "read_timeout": 7200
+}
+```
+
+### Input pipe
+```
+...
+...
+...
+
+      "source": {
+        "type": "json",
+        "system": "salesforce",
+        "is_chronological": false,
+        "is_since_comparable": true,
+        "supports_since": true,
+        "url": "/account"
+      }
+...
+...
+...
 ```
