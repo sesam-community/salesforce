@@ -87,6 +87,7 @@ class DataAccess:
             where_clause = "where {}".format(" AND ".join(conditions)) if conditions else ""
 
             query = f"select {select_clause} from {datatype} {where_clause} order by SystemModstamp"
+            logger.debug(f"query:{query}")
             result = sf.query_all_iter(query, include_deleted=True)
             if result:
                 for row in result:
