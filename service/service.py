@@ -1,15 +1,11 @@
 from functools import wraps
 from flask import Flask, request, Response, abort
-from datetime import datetime, timedelta
+from datetime import datetime
 from dateutil.parser import parse
 import os
 
 import json
-import pytz
 from simple_salesforce import Salesforce, SalesforceError, SalesforceResourceNotFound
-import iso8601
-import logging
-from collections import OrderedDict
 from sesamutils import sesam_logger
 from sesamutils.flask import serve
 
@@ -20,13 +16,13 @@ logger = sesam_logger("salesforce", app=app)
 SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
 API_VERSION = os.environ.get("API_VERSION","52.0")
-DEFAULT_BULK_SWITCH_THRESHOLD = int(os.environ.get("DEFAULT_BULK_SWITCH_THRESHOLD", 2000))
+DEFAULT_BULK_SWITCH_THRESHOLD = int(os.environ.get("DEFAULT_BULK_SWITCH_THRESHOLD", 0))
 
 def datetime_format(dt):
     return '%04d' % dt.year + dt.strftime("-%m-%dT%H:%M:%SZ")
 
-def to_transit_datetime(dt_int):
-    return "~t" + datetime_format(dt_int)
+def to_transit_datetime(dt):
+    return "~t" + datetime_format(dt)
 
 def get_var(var, scope=None, is_required=False):
     envvar = None
@@ -40,66 +36,66 @@ def get_var(var, scope=None, is_required=False):
 
 class DataAccess:
     def __init__(self):
-        self._entities = {}
+        self._sobject_fields = {}
 
     def sesamify(self, entity, datatype=None):
         entity.update({"_id": entity.get("Id")})
-        entity.update({"_updated": "%s" % entity.get("LastModifiedDate")})
 
         for property, value in entity.items():
-            schema = [item for item in self._entities.get(datatype, []) if item.get("name") == property]
+            schema = [item for item in self._sobject_fields.get(datatype, []) if item.get("name") == property]
             if value and len(schema) > 0 and "type" in schema[0] and schema[0]["type"] == "datetime":
-                entity[property] = to_transit_datetime(parse(value))
+                if isinstance(value, int):
+                    entity[property] = to_transit_datetime(datetime.fromtimestamp(value/1000))
+                elif isinstance(value, str):
+                    entity[property] = to_transit_datetime(parse(value))
 
+        entity.update({"_updated": "%s" % entity.get("SystemModstamp").replace("~t","")})
+        entity.update({"_deleted": entity.get("IsDeleted")})
         return entity
 
 
-    def get_entities(self, since, datatype, sf, objectkey=None):
-        if self._entities.get(datatype, []) == []:
+    def get_entities(self, sf, datatype, filters=None, objectkey=None):
+        yield '['
+        if self._sobject_fields.get(datatype, []) == []:
             try:
-                fields = getattr(sf, datatype).describe()["fields"]
+                fields = [dict(f) for f in getattr(sf, datatype).describe()["fields"]]
             except SalesforceResourceNotFound as e:
+                yield str(e)
                 abort(404)
-            self._entities[datatype] = fields
-        if objectkey:
-            try:
-                return self.get_entitiesdata(datatype, since, sf, objectkey)
-            except SalesforceResourceNotFound as e:
-                abort(404)
-        if since is None:
-            return self.get_entitiesdata(datatype, since, sf)
-        else:
-            return [entity for entity in self.get_entitiesdata(datatype, since, sf) if entity["_updated"] > since]
+                return
+            self._sobject_fields[datatype] = fields
+        try:
+            yield from self.get_entitiesdata(sf, datatype, filters, objectkey)
+            yield ']'
+        except SalesforceResourceNotFound as e:
+            yield str(e)
+            abort(404)
 
-    def get_entitiesdata(self, datatype, since, sf, objectkey=None):
-
-        now = datetime.now(pytz.UTC)
-        entities = []
-        end = datetime.now(pytz.UTC)  # we need to use UTC as salesforce API requires this
+    def get_entitiesdata(self, sf, datatype, filters=None, objectkey=None):
+        isFirst = True
         if objectkey:
             obj = getattr(sf, datatype).get(objectkey)
-            return [self.sesamify(obj, datatype)]
-        elif since is None:
-            #fields = getattr(sf, datatype).describe()["fields"]
-            result = [x['Id'] for x in sf.query_all("SELECT Id FROM %s" % (datatype))["records"]]
+            yield json.dumps(self.sesamify(obj, datatype))
         else:
-            start = iso8601.parse_date(since)
-            if start < now + timedelta(days=-30):
-                abort(400, "'since' cannot be more than 30 days ago")
-            if getattr(sf, datatype):
-                if end > (start + timedelta(seconds=60)):
-                    result = getattr(sf, datatype).updated(start, end)["ids"]
-                    deleted = getattr(sf, datatype).deleted(start, end)["deletedRecords"]
-                    for e in deleted:
-                        c = OrderedDict({"_id": e["id"]})
-                        c.update({"_updated": "%s" % e["deletedDate"]})
-                        c.update({"_deleted": True})
-                        entities.append(c)
-        if result:
-            for e in result:
-                c = getattr(sf, datatype).get(e)
-                entities.append(self.sesamify(c, datatype))
-        return entities
+            select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]])
+            conditions = []
+            if filters.get("since"):
+                sinceDateTimeStr = parse(filters.get("since")).isoformat()
+                conditions.append(f"SystemModstamp>{sinceDateTimeStr}")
+            if filters.get("where"):
+                conditions.append(filters.get("where"))
+            where_clause = "where {}".format(" AND ".join(conditions)) if conditions else ""
+
+            query = f"select {select_clause} from {datatype} {where_clause} order by SystemModstamp"
+            result = sf.query_all_iter(query, include_deleted=True)
+            if result:
+                for row in result:
+                    if not isFirst:
+                        yield ',\n'
+                    else:
+                        isFirst = False
+                    yield json.dumps(self.sesamify(row, datatype))
+        return
 
 data_access_layer = DataAccess()
 
@@ -149,16 +145,17 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
         listing = entities
 
     doBulk = False
-    bulk_switch_threshold = DEFAULT_BULK_SWITCH_THRESHOLD
-    if datatype in SF_OBJECTS_CONFIG:
-        bulk_switch_threshold = SF_OBJECTS_CONFIG[datatype].get("bulk_switch_threshold", DEFAULT_BULK_SWITCH_THRESHOLD)
-    doBulk = bulk_switch_threshold < len(listing)
+    if DEFAULT_BULK_SWITCH_THRESHOLD > 0:
+        bulk_switch_threshold = DEFAULT_BULK_SWITCH_THRESHOLD
+        if datatype in SF_OBJECTS_CONFIG:
+            bulk_switch_threshold = SF_OBJECTS_CONFIG[datatype].get("bulk_switch_threshold", DEFAULT_BULK_SWITCH_THRESHOLD)
+        doBulk = bulk_switch_threshold < len(listing)
 
     if doBulk:
         deleteListPerExternalId = {}
         upsertListPerExternalId = {}
         singleDeleteListPerExternalId = {}
-        for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
+        for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"] + ["Id"]:
             deleteListPerExternalId[k] = []
             upsertListPerExternalId[k] = []
             singleDeleteListPerExternalId[k] = []
@@ -182,10 +179,12 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
                 logger.debug(f"length of {k}({vk}) = {str(len(v.get(vk)))}")
         for externalId in deleteListPerExternalId.keys():
             if deleteListPerExternalId.get(externalId):
-                getattr(sf.bulk, datatype).delete(deleteListPerExternalId.get(externalId), externalId, batch_size=10000, use_serial=True)
+                bulkResult1 = getattr(sf.bulk, datatype).delete(deleteListPerExternalId.get(externalId), batch_size=10000, use_serial=True)
+
         for externalId in upsertListPerExternalId.keys():
             if upsertListPerExternalId.get(externalId):
-                getattr(sf.bulk, datatype).upsert(upsertListPerExternalId.get(externalId), externalId, batch_size=10000, use_serial=True)
+                bulkResult2 = getattr(sf.bulk, datatype).upsert(upsertListPerExternalId.get(externalId), externalId, batch_size=10000, use_serial=True)
+
         for externalId in singleDeleteListPerExternalId.keys():
             if singleDeleteListPerExternalId.get(externalId):
                 for objectkey in singleDeleteListPerExternalId.get(externalId):
@@ -196,8 +195,6 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
                         None
                     except Exception as err:
                         logger.debug(f"{datatype}/{externalId}/{objectkey} received exception of type {type(err).__name__}")
-
-
     else:
         for e in listing:
             operation = "DELETE" if e.get("_deleted", False) or operation_in == "DELETE" else operation_in
@@ -422,17 +419,18 @@ def restful(path=None):
 @requires_auth
 def get_entities(datatype, objectkey=None, ext_id_field=None, ext_id=None):
     try:
-        since = request.args.get('since')
         sf = get_sf()
+        filters = {k: v for k, v in request.args.items() if k in["since","where"]}
         if request.endpoint == "get_by_ext_id":
             objectkey = f"{ext_id_field}/{ext_id}"
-        entities = sorted(data_access_layer.get_entities(since, datatype, sf, objectkey), key=lambda k: k["_updated"])
-        return Response(json.dumps(entities), mimetype='application/json')
+        entities = data_access_layer.get_entities(sf, datatype, filters, objectkey)
+        return Response(response=entities, mimetype='application/json')
     except SalesforceError as err:
         return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
             mimetype='application/json',
             status=err.status)
     except Exception as err:
+        logger.exception(err)
         return Response(str(err), mimetype='plain/text', status=500)
 
 @app.route('/<datatype>', methods=["POST", "PUT", "PATCH", "DELETE"], endpoint = "crud_all")
