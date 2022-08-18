@@ -1,6 +1,6 @@
 from functools import wraps
 from flask import Flask, request, Response, abort
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from dateutil.parser import parse
 import os
 
@@ -17,6 +17,9 @@ SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
 API_VERSION = os.environ.get("API_VERSION","52.0")
 DEFAULT_BULK_SWITCH_THRESHOLD = int(os.environ.get("DEFAULT_BULK_SWITCH_THRESHOLD", 0))
+salesforce_service_refreshed_at_interval = int(os.environ.get("SALESFORCE_SERVICE_REFRESHED_AT_INTERVAL", 45))
+salesforce_service = None
+salesforce_service_refreshed_at = None
 
 def datetime_format(dt):
     return '%04d' % dt.year + dt.strftime("-%m-%dT%H:%M:%SZ")
@@ -165,7 +168,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
             for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
                 if e.get(k):
                     externalIdField = k
-            if e.get("_deleted", False) or operation_in == "DELETE":
+            if operation_in == "DELETE" or e.get("_deleted", False):
                 if e.get("Id"):
                     deleteListPerExternalId[externalIdField].append(_get_unsesamified_object(e))
                 else:
@@ -198,7 +201,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
                         logger.debug(f"{datatype}/{externalId}/{objectkey} received exception of type {type(err).__name__}")
     else:
         for e in listing:
-            operation = "DELETE" if e.get("_deleted", False) or operation_in == "DELETE" else operation_in
+            operation = "DELETE" if operation_in == "DELETE" or e.get("_deleted", False) else operation_in
             object, objectkey = _get_object_key(e, objectkey_in)
 
             logger.debug(f"performing {operation} on {datatype}/{objectkey}")
@@ -231,7 +234,8 @@ def requires_auth(f):
 
     return decorated
 
-def get_sf():
+
+def _refresh_sf():
     if request.authorization:
         auth = request.authorization
     elif get_var("LOGIN_CONFIG", "ENV"):
@@ -254,6 +258,20 @@ def get_sf():
     else:
         sf = Salesforce(username, password, token, version=API_VERSION)
     return sf
+
+def get_sf():
+    global salesforce_service
+    global salesforce_service_refreshed_at
+    do_relogin = not salesforce_service
+    if salesforce_service_refreshed_at:
+        delta = datetime.now(timezone.utc) - salesforce_service_refreshed_at
+        do_relogin = do_relogin or delta.seconds//60 >= salesforce_service_refreshed_at_interval
+    if do_relogin:
+        salesforce_service = _refresh_sf()
+        salesforce_service_refreshed_at = datetime.now(timezone.utc)
+    logger.debug(f"do_relogin={do_relogin}, salesforce_service_refreshed_at={salesforce_service_refreshed_at}")
+    return salesforce_service
+
 
 def get_path_for_valueset(req):
     path_prefix_for_alias = "/ValueSet/SesamAlias/"
@@ -410,6 +428,7 @@ def restful(path=None):
             mimetype='application/json',
             status=err.status)
     except Exception as err:
+        logger.exception(err)
         return Response(str(err), mimetype='plain/text', status=500)
 
 
