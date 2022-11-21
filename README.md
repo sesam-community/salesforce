@@ -34,7 +34,8 @@ Sesam-Salesforce connector that can be used to:
 
     #### query params
     * `since`: Optional. Data updated after _since_ value will be delivered. CAnnot be older then 30 days ago due to Salesforce REST API limitations.
-    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.
+    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.    
+    * `do_create_if_key_is_empty`: Optional. Allows creation of object when the objectkey cannot be determined. Applicable to POST/PUT/PATCH requests.
     
 ___
 

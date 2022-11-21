@@ -103,7 +103,7 @@ class DataAccess:
 
 data_access_layer = DataAccess()
 
-def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
+def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do_create_if_key_is_empty=False):
     def _get_unsesamified_object(entity):
         d = []
         for p in entity.keys():
@@ -114,7 +114,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
 
         return entity
 
-    def _get_object_key(entity, objectkey_in=None):
+    def _get_object_key(entity, objectkey_in=None, do_create_if_key_is_empty=False):
         '''if 'Id' is specified, use 'Id' as key,
             else pick the first external id field that has a value'''
         key_field = "Id"
@@ -129,7 +129,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
                     break
 
         key = key or objectkey_in
-        if not key:
+        if not do_create_if_key_is_empty and not key:
             abort(500,"cannot figure out the objectkey for %s" % (entity))
         #remove fields starting with '_'
         entity = _get_unsesamified_object(entity)
@@ -202,7 +202,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
     else:
         for e in listing:
             operation = "DELETE" if operation_in == "DELETE" or e.get("_deleted", False) else operation_in
-            object, objectkey = _get_object_key(e, objectkey_in)
+            object, objectkey = _get_object_key(e, objectkey_in, do_create_if_key_is_empty)
 
             logger.debug(f"performing {operation} on {datatype}/{objectkey}")
             if operation == "DELETE":
@@ -213,7 +213,10 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None):
                 except Exception as err:
                     logger.debug(f"{datatype}/{objectkey} received exception of type {type(err).__name__}")
             else:
-                getattr(sf, datatype).upsert(objectkey, object)
+                if do_create_if_key_is_empty and not objectkey:
+                    getattr(sf, datatype).create(object)
+                else:
+                    getattr(sf, datatype).upsert(objectkey, object)
 
 def authenticate():
     """Sends a 401 response that enables basic auth"""
@@ -464,7 +467,8 @@ def receiver(datatype, objectkey=None, ext_id_field=None, ext_id=None):
         if request.endpoint == "crud_by_ext_id":
             objectkey = f"{ext_id_field}/{ext_id}"
         if getattr(sf, datatype):
-            transform(datatype, entities, sf, operation_in=request.method, objectkey_in=objectkey)
+            do_create_if_key_is_empty = request.args.get("do_create_if_key_is_empty","").lower() in ["true","1"]
+            transform(datatype, entities, sf, operation_in=request.method, objectkey_in=objectkey, do_create_if_key_is_empty=do_create_if_key_is_empty)
         return Response("", mimetype='application/json')
     except SalesforceError as err:
         logger.exception(err)
