@@ -34,7 +34,8 @@ Sesam-Salesforce connector that can be used to:
 
     #### query params
     * `since`: Optional. Data updated after _since_ value will be delivered. CAnnot be older then 30 days ago due to Salesforce REST API limitations.
-    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.
+    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.    
+    * `do_create_if_key_is_empty`: Optional. Allows creation of object when the objectkey cannot be determined. Applicable to POST/PUT/PATCH requests.
     
 ___
 
@@ -78,6 +79,14 @@ ___
  9. `/sf/tooling/<path:path>`, methods=["GET", "POST", "DELETE", "PATCH", "PUT"]
 
     This is endpoint that makes available the [Salesforce tooling API](https://developer.salesforce.com/docs/atlas.en-us.api_tooling.meta/api_tooling/intro_api_tooling.htm).
+______
+ 10. `/sf/rest/<path:path>`, methods=["GET", "POST", "DELETE", "PATCH", "PUT"]
+
+    This is endpoint that makes available any REST call to Salesforce RestAPI. If the original endpoint is `services/data/v{{version}}/mypath1/mypath2/mypath3`, the path in this endpoint should be `/mypath1/mypath2/mypath3`. Query params are passed over.
+______
+ 11. `/services/apexrest/<path:path>`, methods=["GET", "POST", "DELETE", "PATCH", "PUT"]
+
+    This is endpoint that makes available the [apexrest webservices](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_rest.htm). If the original endpoint is `services/apexrest/mypath1/mypath2/mypath3`, the path in this endpoint should be `/mypath1/mypath2/mypath3`. Query params are passed over.
 ___
 
 ## Schema Examples
