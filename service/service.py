@@ -420,11 +420,16 @@ def tooling_execute(path):
         return Response(str(err), mimetype='plain/text', status=500)
 
 @app.route('/sf/rest/<path:path>', methods=['GET', 'POST', 'DELETE', 'PATCH'], endpoint="restful")
+@app.route('/services/restful/<path:path>', methods=['GET', 'POST', 'DELETE', 'PATCH'], endpoint="restful")
+@app.route('/services/apexrest/<path:path>', methods=['GET', 'POST', 'DELETE', 'PATCH'], endpoint="apexrest")
 @requires_auth
 def restful(path=None):
     try:
         sf = get_sf()
-        response_data = sf.restful(path, request.args, request.method, json=request.get_json())
+        if request.endpoint == "restful":
+            response_data = sf.restful(path, request.args, request.method, json=request.get_json())
+        elif request.endpoint == "apexrest":
+            response_data = sf.apexecute(action=path, method=request.method, data=request.get_json(), params=request.args)
         return Response(json.dumps(response_data), mimetype='application/json')
     except SalesforceError as err:
         return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),

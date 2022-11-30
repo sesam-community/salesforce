@@ -79,6 +79,14 @@ ___
  9. `/sf/tooling/<path:path>`, methods=["GET", "POST", "DELETE", "PATCH", "PUT"]
 
     This is endpoint that makes available the [Salesforce tooling API](https://developer.salesforce.com/docs/atlas.en-us.api_tooling.meta/api_tooling/intro_api_tooling.htm).
+______
+ 10. `/sf/rest/<path:path>`, methods=["GET", "POST", "DELETE", "PATCH", "PUT"]
+
+    This is endpoint that makes available any REST call to Salesforce RestAPI. If the original endpoint is `services/data/v{{version}}/mypath1/mypath2/mypath3`, the path in this endpoint should be `/mypath1/mypath2/mypath3`. Query params are passed over.
+______
+ 11. `/services/apexrest/<path:path>`, methods=["GET", "POST", "DELETE", "PATCH", "PUT"]
+
+    This is endpoint that makes available the [apexrest webservices](https://developer.salesforce.com/docs/atlas.en-us.apexcode.meta/apexcode/apex_rest.htm). If the original endpoint is `services/apexrest/mypath1/mypath2/mypath3`, the path in this endpoint should be `/mypath1/mypath2/mypath3`. Query params are passed over.
 ___
 
 ## Schema Examples
