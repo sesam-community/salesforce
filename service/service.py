@@ -56,6 +56,21 @@ class DataAccess:
         entity.update({"_deleted": entity.get("IsDeleted")})
         return entity
 
+    def unsesamify(self, input):
+        entities = []
+        if isinstance(input, list):
+            for e in input:
+                entities.append(self.unsesamify(e))
+            return entities
+        else:
+            sesam_fields = []
+            for p in input.keys():
+                if p.startswith("_"):
+                    sesam_fields.append(p)
+            for p in sesam_fields:
+                del(input[p])
+
+            return input
 
     def get_entities(self, sf, datatype, filters=None, objectkey=None):
         yield '['
@@ -103,16 +118,15 @@ class DataAccess:
 
 data_access_layer = DataAccess()
 
-def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do_create_if_key_is_empty=False):
-    def _get_unsesamified_object(entity):
-        d = []
-        for p in entity.keys():
-            if p.startswith("_"):
-                d.append(p)
-        for p in d:
-            del(entity[p])
+def get_request_data(request):
+    preserve_as_list = request.args.get("preserve_as_list","").lower() in ["true","1"]
+    if isinstance(request.get_json(), list) and not preserve_as_list:
+        return request.get_json()[0]
+    else:
+        return request.get_json()
 
-        return entity
+
+def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do_create_if_key_is_empty=False):
 
     def _get_object_key(entity, objectkey_in=None, do_create_if_key_is_empty=False):
         '''if 'Id' is specified, use 'Id' as key,
@@ -132,7 +146,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do
         if not do_create_if_key_is_empty and not key:
             abort(500,"cannot figure out the objectkey for %s" % (entity))
         #remove fields starting with '_'
-        entity = _get_unsesamified_object(entity)
+        entity = data_access_layer.unsesamify(entity)
         if "Id" in entity:
             del(entity["Id"])
         if key_field in entity:
@@ -170,11 +184,11 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do
                     externalIdField = k
             if operation_in == "DELETE" or e.get("_deleted", False):
                 if e.get("Id"):
-                    deleteListPerExternalId[externalIdField].append(_get_unsesamified_object(e))
+                    deleteListPerExternalId[externalIdField].append(data_access_layer.unsesamify(e))
                 else:
                     singleDeleteListPerExternalId[externalIdField].append(f"{e[externalIdField]}")
             else:
-                upsertListPerExternalId[externalIdField].append(_get_unsesamified_object(e))
+                upsertListPerExternalId[externalIdField].append(data_access_layer.unsesamify(e))
 
         for k,v in ({"deleteListPerExternalId":deleteListPerExternalId,
                     "upsertListPerExternalId":upsertListPerExternalId,
@@ -401,7 +415,7 @@ def valueset_execute_non_get(sf_id_or_alias=None):
 def tooling_execute(path):
     try:
         sf = get_sf()
-        data = request.get_json()
+        data = data_access_layer.unsesamify(get_request_data(request))
         response_json = sf.toolingexecute(
             path,
             method=request.method,
@@ -426,10 +440,11 @@ def tooling_execute(path):
 def restful(path=None):
     try:
         sf = get_sf()
+        data = data_access_layer.unsesamify(get_request_data(request))
         if request.endpoint == "restful":
-            response_data = sf.restful(path, request.args, request.method, json=request.get_json())
+            response_data = sf.restful(path, request.args, request.method, json=data)
         elif request.endpoint == "apexrest":
-            response_data = sf.apexecute(action=path, method=request.method, data=request.get_json(), params=request.args)
+            response_data = sf.apexecute(action=path, method=request.method, data=data, params=request.args)
         return Response(json.dumps(response_data), mimetype='application/json')
     except SalesforceError as err:
         return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
