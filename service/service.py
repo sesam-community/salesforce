@@ -118,6 +118,14 @@ class DataAccess:
 
 data_access_layer = DataAccess()
 
+def get_request_data(request):
+    preserve_as_list = request.args.get("preserve_as_list","").lower() in ["true","1"]
+    if isinstance(request.get_json(), list) and not preserve_as_list:
+        return request.get_json()[0]
+    else:
+        return request.get_json()
+
+
 def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do_create_if_key_is_empty=False):
 
     def _get_object_key(entity, objectkey_in=None, do_create_if_key_is_empty=False):
@@ -407,7 +415,7 @@ def valueset_execute_non_get(sf_id_or_alias=None):
 def tooling_execute(path):
     try:
         sf = get_sf()
-        data = data_access_layer.unsesamify(request.get_json())
+        data = data_access_layer.unsesamify(get_request_data(request))
         response_json = sf.toolingexecute(
             path,
             method=request.method,
@@ -432,8 +440,7 @@ def tooling_execute(path):
 def restful(path=None):
     try:
         sf = get_sf()
-        data = data_access_layer.unsesamify(request.get_json())
-        logger.debug(json.dumps(data,indent=2))
+        data = data_access_layer.unsesamify(get_request_data(request))
         if request.endpoint == "restful":
             response_data = sf.restful(path, request.args, request.method, json=data)
         elif request.endpoint == "apexrest":
