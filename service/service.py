@@ -182,6 +182,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do
             for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
                 if e.get(k):
                     externalIdField = k
+                    break
             if operation_in == "DELETE" or e.get("_deleted", False):
                 if e.get("Id"):
                     deleteListPerExternalId[externalIdField].append(data_access_layer.unsesamify(e))
