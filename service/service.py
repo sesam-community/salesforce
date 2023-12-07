@@ -27,6 +27,9 @@ def datetime_format(dt):
 def to_transit_datetime(dt):
     return "~t" + datetime_format(dt)
 
+def to_nontransit_datetime(dt_str):
+    return dt_str if dt_str[0:2] != "~t" else dt_str[2:]
+
 def get_var(var, scope=None, is_required=False):
     envvar = None
     if (scope is None or scope=="REQUEST") and var in request.args:
@@ -52,7 +55,7 @@ class DataAccess:
                 elif isinstance(value, str):
                     entity[property] = to_transit_datetime(parse(value))
 
-        entity.update({"_updated": "%s" % entity.get("SystemModstamp").replace("~t","")})
+        entity.update({"_updated": "%s" % entity.get("SystemModstamp")})
         entity.update({"_deleted": entity.get("IsDeleted")})
         return entity
 
@@ -98,7 +101,7 @@ class DataAccess:
             select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]])
             conditions = []
             if filters.get("since"):
-                sinceDateTimeStr = parse(filters.get("since")).isoformat()
+                sinceDateTimeStr = parse(to_nontransit_datetime(filters.get("since"))).isoformat()
                 conditions.append(f"SystemModstamp>{sinceDateTimeStr}")
             if filters.get("where"):
                 conditions.append(filters.get("where"))
