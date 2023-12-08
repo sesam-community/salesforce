@@ -2,6 +2,7 @@ from functools import wraps
 from flask import Flask, request, Response, abort
 from datetime import datetime, timedelta, timezone
 from dateutil.parser import parse
+from urllib import parse as urlparser 
 import os
 
 import json
@@ -26,6 +27,9 @@ def datetime_format(dt):
 
 def to_transit_datetime(dt):
     return "~t" + datetime_format(dt)
+
+def to_nontransit_datetime(dt_str):
+    return dt_str if dt_str[0:2] != "~t" else dt_str[2:]
 
 def get_var(var, scope=None, is_required=False):
     envvar = None
@@ -52,7 +56,7 @@ class DataAccess:
                 elif isinstance(value, str):
                     entity[property] = to_transit_datetime(parse(value))
 
-        entity.update({"_updated": "%s" % entity.get("SystemModstamp").replace("~t","")})
+        entity.update({"_updated": "%s" % entity.get("SystemModstamp")})
         entity.update({"_deleted": entity.get("IsDeleted")})
         return entity
 
@@ -72,7 +76,7 @@ class DataAccess:
 
             return input
 
-    def get_entities(self, sf, datatype, filters=None, objectkey=None):
+    def get_entities(self, sf, datatype, query_config=None, objectkey=None):
         yield '['
         if self._sobject_fields.get(datatype, []) == []:
             try:
@@ -83,23 +87,25 @@ class DataAccess:
                 return
             self._sobject_fields[datatype] = fields
         try:
-            yield from self.get_entitiesdata(sf, datatype, filters, objectkey)
+            yield from self.get_entitiesdata(sf, datatype, query_config, objectkey)
             yield ']'
         except SalesforceResourceNotFound as e:
             yield str(e)
             abort(404)
 
-    def get_entitiesdata(self, sf, datatype, filters=None, objectkey=None):
+    def get_entitiesdata(self, sf, datatype, query_config=None, objectkey=None):
         isFirst = True
         if objectkey:
             obj = getattr(sf, datatype).get(objectkey)
             yield json.dumps(self.sesamify(obj, datatype))
         else:
-            select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]])
+            extra_attributes = query_config.get("extra_attributes",[])
+            select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]] + extra_attributes)
             conditions = []
+            filters = query_config.get("filters",{})
             if filters.get("since"):
-                sinceDateTimeStr = parse(filters.get("since")).isoformat()
-                conditions.append(f"SystemModstamp>{sinceDateTimeStr}")
+                sinceDateTimeStr = parse(to_nontransit_datetime(filters.get("since"))).isoformat()
+                conditions.append(f"SystemModstamp>={sinceDateTimeStr}")
             if filters.get("where"):
                 conditions.append(filters.get("where"))
             where_clause = "where {}".format(" AND ".join(conditions)) if conditions else ""
@@ -139,7 +145,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do
             for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
                 if entity.get(k):
                     key_field = k
-                    key = f"{key_field}/{entity[key_field]}"
+                    key = f"{key_field}/{urlparser.quote_plus(entity[key_field])}"
                     break
 
         key = key or objectkey_in
@@ -465,9 +471,11 @@ def get_entities(datatype, objectkey=None, ext_id_field=None, ext_id=None):
     try:
         sf = get_sf()
         filters = {k: v for k, v in request.args.items() if k in["since","where"]}
+        extra_attributes = request.args.get("extra_attributes").split(",") if request.args.get("extra_attributes") else []
+        query_config={"filters": filters, "extra_attributes": extra_attributes}
         if request.endpoint == "get_by_ext_id":
             objectkey = f"{ext_id_field}/{ext_id}"
-        entities = data_access_layer.get_entities(sf, datatype, filters, objectkey)
+        entities = data_access_layer.get_entities(sf, datatype, query_config, objectkey)
         return Response(response=entities, mimetype='application/json')
     except SalesforceError as err:
         return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
