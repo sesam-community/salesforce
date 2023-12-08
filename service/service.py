@@ -105,7 +105,7 @@ class DataAccess:
             filters = query_config.get("filters",{})
             if filters.get("since"):
                 sinceDateTimeStr = parse(to_nontransit_datetime(filters.get("since"))).isoformat()
-                conditions.append(f"SystemModstamp>{sinceDateTimeStr}")
+                conditions.append(f"SystemModstamp>={sinceDateTimeStr}")
             if filters.get("where"):
                 conditions.append(filters.get("where"))
             where_clause = "where {}".format(" AND ".join(conditions)) if conditions else ""
