@@ -34,7 +34,8 @@ Sesam-Salesforce connector that can be used to:
 
     #### query params
     * `since`: Optional. Data updated after _since_ value will be delivered. CAnnot be older then 30 days ago due to Salesforce REST API limitations.
-    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.    
+    * `where`: Optional. Applicable to GET method condition that will be appended to SOQL select query.
+    * `extra_attributes`: Optional. CSV of extra attributes to fetch. Fex, 'Createdby.name'. N.B. Transit encoding of datetime fields is not supported on these attributes.
     * `do_create_if_key_is_empty`: Optional. Applicable to POST/PUT/PATCH requests. Allows creation of object when the objectkey cannot be determined.
     
 ___
@@ -191,7 +192,7 @@ Example configs:
         "is_chronological": false,
         "is_since_comparable": true,
         "supports_since": true,
-        "url": "/account"
+        "url": "/account?extra_attributes=CreatedBy.name&where=IsPersonAccount=false and PersonEmail='myuser@email.com'"
       }
 ...
 ...
