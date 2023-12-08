@@ -76,7 +76,7 @@ class DataAccess:
 
             return input
 
-    def get_entities(self, sf, datatype, filters=None, objectkey=None):
+    def get_entities(self, sf, datatype, query_config=None, objectkey=None):
         yield '['
         if self._sobject_fields.get(datatype, []) == []:
             try:
@@ -87,20 +87,22 @@ class DataAccess:
                 return
             self._sobject_fields[datatype] = fields
         try:
-            yield from self.get_entitiesdata(sf, datatype, filters, objectkey)
+            yield from self.get_entitiesdata(sf, datatype, query_config, objectkey)
             yield ']'
         except SalesforceResourceNotFound as e:
             yield str(e)
             abort(404)
 
-    def get_entitiesdata(self, sf, datatype, filters=None, objectkey=None):
+    def get_entitiesdata(self, sf, datatype, query_config=None, objectkey=None):
         isFirst = True
         if objectkey:
             obj = getattr(sf, datatype).get(objectkey)
             yield json.dumps(self.sesamify(obj, datatype))
         else:
-            select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]])
+            extra_attributes = query_config.get("extra_attributes",[])
+            select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]] + extra_attributes)
             conditions = []
+            filters = query_config.get("filters",{})
             if filters.get("since"):
                 sinceDateTimeStr = parse(to_nontransit_datetime(filters.get("since"))).isoformat()
                 conditions.append(f"SystemModstamp>{sinceDateTimeStr}")
@@ -469,9 +471,11 @@ def get_entities(datatype, objectkey=None, ext_id_field=None, ext_id=None):
     try:
         sf = get_sf()
         filters = {k: v for k, v in request.args.items() if k in["since","where"]}
+        extra_attributes = request.args.get("extra_attributes").split(",") if request.args.get("extra_attributes") else []
+        query_config={"filters": filters, "extra_attributes": extra_attributes}
         if request.endpoint == "get_by_ext_id":
             objectkey = f"{ext_id_field}/{ext_id}"
-        entities = data_access_layer.get_entities(sf, datatype, filters, objectkey)
+        entities = data_access_layer.get_entities(sf, datatype, query_config, objectkey)
         return Response(response=entities, mimetype='application/json')
     except SalesforceError as err:
         return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
