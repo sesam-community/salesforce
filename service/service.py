@@ -145,7 +145,7 @@ def transform(datatype, entities, sf, operation_in="POST", objectkey_in=None, do
             for k in SF_OBJECTS_CONFIG[datatype]["ordered_key_fields"]:
                 if entity.get(k):
                     key_field = k
-                    key = f"{key_field}/{urlparser.quote_plus(entity[key_field])}"
+                    key = f"{key_field}/{urlparser.quote(entity[key_field])}"
                     break
 
         key = key or objectkey_in
