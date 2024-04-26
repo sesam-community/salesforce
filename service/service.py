@@ -125,6 +125,8 @@ class DataAccess:
 data_access_layer = DataAccess()
 
 def get_request_data(request):
+    if not request.get_json():
+        return None
     preserve_as_list = request.args.get("preserve_as_list","").lower() in ["true","1"]
     if isinstance(request.get_json(), list) and not preserve_as_list:
         return request.get_json()[0]
