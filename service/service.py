@@ -61,6 +61,8 @@ class DataAccess:
         return entity
 
     def unsesamify(self, input):
+        if not input:
+            return None
         entities = []
         if isinstance(input, list):
             for e in input:
@@ -125,7 +127,7 @@ class DataAccess:
 data_access_layer = DataAccess()
 
 def get_request_data(request):
-    if not request.get_json():
+    if not request.data:
         return None
     preserve_as_list = request.args.get("preserve_as_list","").lower() in ["true","1"]
     if isinstance(request.get_json(), list) and not preserve_as_list:
