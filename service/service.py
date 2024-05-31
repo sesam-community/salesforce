@@ -280,7 +280,7 @@ def _refresh_sf():
     token, username = auth['username'].split("\\", 1)
     password = auth['password']
 
-    instance = get_var('instance') or "prod"
+    instance = get_var('instance') or login_config.get("INSTANCE")
     if instance == "sandbox":
         sf = Salesforce(username, password, token, domain='test', version=API_VERSION)
     else:
