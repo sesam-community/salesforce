@@ -13,10 +13,9 @@ Sesam-Salesforce connector that can be used to:
 | USERNAME | username for login | yes | n/a |
 | PASSWORD | password for login | yes | n/a |
 | SECURITY_TOKEN | security token for login. obtained from the profile page of the user | yes | n/a |
-| LOGIN_CONFIG | a dict with keys _USERNAME, PASSWORD, SECURITY_TOKEN_ so that login details are kept in only 1 secret | yes | n/a |
+| LOGIN_CONFIG | a dict with keys _USERNAME, PASSWORD, SECURITY_TOKEN_ so that login details are kept in only 1 secret. Set INSTANCE='Sandbox' for Sanbox setup, omit it otherwise. Example value: `{"USERNAME": "myusename","PASSWORD": "mypassword","SECURITY_TOKEN": "mysecuritytoken","INSTANCE":"sandbox"}`| yes | n/a |
 | WEBFRAMEWORK | set to 'FLASK' to use flask, otherwise it will run on cherrypy | no | n/a |
 | LOG_LEVEL | LOG_LEVEL. one of [CRITICAL\|ERROR\|WARNING\|INFO\|DEBUG] | no | 'INFO' |
-| INSTANCE | salesforce instance. set to 'sandbox' to work on test domain. Otherwise it will be non-test domain. | no | 'prod' |
 | VALUESET_LIST | a dict where keys are the aliases to be used in sesam and values are the paths to the corresponding valueset. Used when fetching all valusets and for patching. e.g.`{"my_global_vs": "GlobalValueSet/0Nt5I0000008cw7SAA", "my_custom_vs": "CustomField/00N5I000004yDnkUAE"}`| no | n/a |
 | SF_OBJECTS_CONFIG | dict for object level customizations. see schemas section for description. | no | n/a |
 | DEFAULT_BULK_SWITCH_THRESHOLD | Integer. Threshold value on the number of incoming entities to swith to bulk-api instead of rest-api.Disabled if not set. | no | None |
