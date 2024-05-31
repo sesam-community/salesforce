@@ -56,7 +56,7 @@ class DataAccess:
                 elif isinstance(value, str):
                     entity[property] = to_transit_datetime(parse(value))
 
-        entity.update({"_updated": "%s" % entity.get("SystemModstamp")})
+        entity.update({"_updated": "%s" % (entity.get("SystemModstamp") or entity.get("CreatedDate"))})
         entity.update({"_deleted": entity.get("IsDeleted")})
         return entity
 
@@ -103,16 +103,17 @@ class DataAccess:
         else:
             extra_attributes = query_config.get("extra_attributes",[])
             select_clause = ",".join([f["name"] for f in self._sobject_fields[datatype]] + extra_attributes)
+            updatedFieldInSF = "SystemModstamp" if "SystemModstamp" in [f["name"] for f in self._sobject_fields[datatype]] else "CreatedDate"
             conditions = []
             filters = query_config.get("filters",{})
             if filters.get("since"):
                 sinceDateTimeStr = parse(to_nontransit_datetime(filters.get("since"))).isoformat()
-                conditions.append(f"SystemModstamp>={sinceDateTimeStr}")
+                conditions.append(f"{updatedFieldInSF}>={sinceDateTimeStr}")
             if filters.get("where"):
                 conditions.append(filters.get("where"))
             where_clause = "where {}".format(" AND ".join(conditions)) if conditions else ""
 
-            query = f"select {select_clause} from {datatype} {where_clause} order by SystemModstamp"
+            query = f"select {select_clause} from {datatype} {where_clause} order by {updatedFieldInSF}"
             logger.debug(f"query:{query}")
             result = sf.query_all_iter(query, include_deleted=True)
             if result:
