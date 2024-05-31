@@ -16,7 +16,7 @@ logger = sesam_logger("salesforce", app=app)
 
 SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
-API_VERSION = os.environ.get("API_VERSION","52.0")
+API_VERSION = os.environ.get("API_VERSION","60.0")
 DEFAULT_BULK_SWITCH_THRESHOLD = int(os.environ.get("DEFAULT_BULK_SWITCH_THRESHOLD", 0))
 salesforce_service_refreshed_at_interval = int(os.environ.get("SALESFORCE_SERVICE_REFRESHED_AT_INTERVAL", 45))
 salesforce_service = None
