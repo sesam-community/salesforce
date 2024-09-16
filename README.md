@@ -8,18 +8,47 @@ Sesam-Salesforce connector that can be used to:
 [![SesamCommunity CI&CD](https://github.com/sesam-community/salesforce/actions/workflows/sesam-community-ci-cd.yml/badge.svg)](https://github.com/sesam-community/salesforce/actions/workflows/sesam-community-ci-cd.yml)
 ## ENV VARIABLES
 
-| CONFIG_NAME        | DESCRIPTION           | IS_REQUIRED  |DEFAULT_VALUE|
-| -------------------|---------------------|:------------:|:-----------:|
-| USERNAME | username for login | yes | n/a |
-| PASSWORD | password for login | yes | n/a |
-| SECURITY_TOKEN | security token for login. obtained from the profile page of the user | yes | n/a |
-| LOGIN_CONFIG | a dict with keys _USERNAME, PASSWORD, SECURITY_TOKEN_ so that login details are kept in only 1 secret. Set INSTANCE='Sandbox' for Sanbox setup, omit it otherwise. Example value: `{"USERNAME": "myusename","PASSWORD": "mypassword","SECURITY_TOKEN": "mysecuritytoken","INSTANCE":"sandbox"}`| yes | n/a |
-| WEBFRAMEWORK | set to 'FLASK' to use flask, otherwise it will run on cherrypy | no | n/a |
-| LOG_LEVEL | LOG_LEVEL. one of [CRITICAL\|ERROR\|WARNING\|INFO\|DEBUG] | no | 'INFO' |
-| VALUESET_LIST | a dict where keys are the aliases to be used in sesam and values are the paths to the corresponding valueset. Used when fetching all valusets and for patching. e.g.`{"my_global_vs": "GlobalValueSet/0Nt5I0000008cw7SAA", "my_custom_vs": "CustomField/00N5I000004yDnkUAE"}`| no | n/a |
-| SF_OBJECTS_CONFIG | dict for object level customizations. see schemas section for description. | no | n/a |
-| DEFAULT_BULK_SWITCH_THRESHOLD | Integer. Threshold value on the number of incoming entities to swith to bulk-api instead of rest-api.Disabled if not set. | no | None |
+<table><tr><th>CONFIG_NAME        </th><th> DESCRIPTION           </th><th> IS_REQUIRED  </th><th>DEFAULT_VALUE</th></tr>
+<tr><td> SF_OBJECTS_CONFIG </td><td> dict for object level customizations. see schemas section for description. </td><td> no </td><td> n/a </td></tr>
+<tr><td> LOGIN_CONFIG </td><td> a dict either with keys<br> - <em>INSTANCE, CLIENT_ID, CLIENT_SECRET</em> <br>
+Fex  
+	
+```json
+{
+  "CLIENT_ID": "<MY_CLIENT_ID>",
+  "CLIENT_SECRET": "<MY_CLIENT_SECRET>",
+  "INSTANCE": "myinstance.sandbox.my.salesforce.com"
+}
+```
+, or <br><br> - _USERNAME, PASSWORD, SECURITY_TOKEN, and optionally DOMAIN_(defaults to 'Login' if not set),<br>
+Fex
+			
+```json 
+{
+  "USERNAME": "myusename",
+  "PASSWORD": "mypassword",
+  "SECURITY_TOKEN": "mysecuritytoken",
+  "DOMAIN":"myinstance.sandbox.my"
+}
+```
 
+</td><td> yes </td><td> n/a </td><tr>
+
+<tr><td> WEBFRAMEWORK </td><td> set to 'FLASK' to use flask, otherwise it will run on cherrypy </td><td> no </td><td> n/a </td></tr>
+<tr><td> LOG_LEVEL </td><td> LOG_LEVEL. one of [CRITICAL\|ERROR\|WARNING\|INFO\|DEBUG] </td><td> no </td><td> 'INFO' </td></tr>
+<tr><td> VALUESET_LIST </td><td> a dict where keys are the aliases to be used in sesam and values are the paths to the corresponding valueset. Used when fetching all valusets and for patching. 
+	<br>Fex
+	
+```json
+{
+  "my_global_vs": "GlobalValueSet/0Nt5I0000008cw7SAA", 
+  "my_custom_vs": "CustomField/00N5I000004yDnkUAE"
+}
+```
+ 
+ </td><td> no </td><td> n/a </td></tr>
+<tr><td> DEFAULT_BULK_SWITCH_THRESHOLD </td><td> Integer. Threshold value on the number of incoming entities to swith to bulk-api instead of rest-api.Disabled if not set. </td><td> no </td><td> None </td></tr>
+</table>
 
 ## ENDPOINTS
 
