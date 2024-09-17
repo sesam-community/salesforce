@@ -9,6 +9,7 @@ import json
 from simple_salesforce import Salesforce, SalesforceError, SalesforceResourceNotFound
 from sesamutils import sesam_logger
 from sesamutils.flask import serve
+import requests
 
 app = Flask(__name__)
 
@@ -265,27 +266,38 @@ def requires_auth(f):
 
 
 def _refresh_sf():
+    login_config = json.loads(get_var("LOGIN_CONFIG", "ENV"))
+    version = API_VERSION
+
+    
+    username = login_config.get("USERNAME") or get_var("USERNAME", "ENV")
+    password = login_config.get("PASSWORD") or get_var("PASSWORD", "ENV")
+    security_token = login_config.get("SECURITY_TOKEN") or get_var("SECURITY_TOKEN", "ENV")
+    domain = login_config.get("DOMAIN")
+    
+    instance = login_config.get("INSTANCE")
+    client_id = login_config.get("CLIENT_ID")
+    client_secret = login_config.get("CLIENT_SECRET")
+    access_token = None
+
     if request.authorization:
         auth = request.authorization
-    elif get_var("LOGIN_CONFIG", "ENV"):
-        login_config = json.loads(get_var("LOGIN_CONFIG", "ENV"))
-        auth =  {
-            "username": login_config["SECURITY_TOKEN"] + "\\" + login_config["USERNAME"],
-            "password": login_config["PASSWORD"]
-            }
-    else:
-        auth =  {
-            "username": get_var("SECURITY_TOKEN", "ENV") + "\\" + get_var("USERNAME", "ENV"),
-            "password": get_var("PASSWORD", "ENV")
-            }
-    token, username = auth['username'].split("\\", 1)
-    password = auth['password']
+    elif client_secret and client_id and instance:
+        payload = {'grant_type': "client_credentials",
+                'client_id': client_id,
+                'client_secret': client_secret
+                }
+        auth_response = requests.post(url=f"https://{instance}/services/oauth2/token", data=payload)
+        access_token = json.loads(auth_response.text).get("access_token")
 
-    instance = get_var('instance') or login_config.get("INSTANCE")
-    if instance == "sandbox":
-        sf = Salesforce(username, password, token, domain='test', version=API_VERSION)
-    else:
-        sf = Salesforce(username, password, token, version=API_VERSION)
+    sf = Salesforce(username=username, 
+                    password=password, 
+                    security_token=security_token,
+                    domain=domain, 
+                    version=API_VERSION,
+                    instance=instance,
+                    session_id=access_token)
+
     return sf
 
 def get_sf():
@@ -515,8 +527,13 @@ def receiver(datatype, objectkey=None, ext_id_field=None, ext_id=None):
 
 if __name__ == '__main__':
     PORT = int(get_var('PORT', "ENV") or 5000)
-    username = json.loads(get_var("LOGIN_CONFIG", "ENV")).get("USERNAME") if get_var("LOGIN_CONFIG", "ENV") else get_var("USERNAME", "ENV")
-    logger.info(f"Starting opp with USERNAME={username}")
+    login_config = json.loads(get_var("LOGIN_CONFIG", "ENV"))
+    if {"USERNAME", "PASSWORD", "SECURITY_TOKEN"}.issubset(set(login_config.keys())):
+        logger.info("Starting up with OAuth 2.0 Username-Password Flow (USERNAME={})".format({login_config.get("USERNAME")}))
+    elif {"INSTANCE", "CLIENT_ID", "CLIENT_SECRET"}.issubset(set(login_config.keys())):  
+        logger.info(f"Starting up with OAuth 2.0 Client Credentials Flow")
+    else:
+        raise Exception("Incomplete LOGIN_CONFIG definition!")
 
     if get_var("WEBFRAMEWORK", "ENV") == "FLASK":
         app.run(debug=True, host='0.0.0.0', port=PORT)
