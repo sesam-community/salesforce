@@ -6,14 +6,11 @@ from urllib import parse as urlparser
 import os
 
 import json
-from simple_salesforce import Salesforce, SalesforceError, SalesforceResourceNotFound
-from sesamutils import sesam_logger
-from sesamutils.flask import serve
+from simple_salesforce import Salesforce, SalesforceError, SalesforceResourceNotFound, SalesforceAuthenticationFailed
 import requests
+import logging
 
 app = Flask(__name__)
-
-logger = sesam_logger("salesforce", app=app)
 
 SF_OBJECTS_CONFIG = json.loads(os.environ.get("SF_OBJECTS_CONFIG","{}"))
 VALUESET_LIST = json.loads(os.environ.get("VALUESET_LIST","{}"))
@@ -78,23 +75,19 @@ class DataAccess:
                 del(input[p])
 
             return input
+    
+    def reload_fields_metadata(self, sf, datatype):
+        if self._sobject_fields.get(datatype, []) == []:
+            fields = [dict(f) for f in getattr(sf, datatype).describe()["fields"]]
+            self._sobject_fields[datatype] = fields
 
     def get_entities(self, sf, datatype, query_config=None, objectkey=None):
-        yield '['
-        if self._sobject_fields.get(datatype, []) == []:
-            try:
-                fields = [dict(f) for f in getattr(sf, datatype).describe()["fields"]]
-            except SalesforceResourceNotFound as e:
-                yield str(e)
-                abort(404)
-                return
-            self._sobject_fields[datatype] = fields
         try:
+            yield '['
             yield from self.get_entitiesdata(sf, datatype, query_config, objectkey)
             yield ']'
         except SalesforceResourceNotFound as e:
-            yield str(e)
-            abort(404)
+            abort(404, str(e))
 
     def get_entitiesdata(self, sf, datatype, query_config=None, objectkey=None):
         isFirst = True
@@ -270,32 +263,23 @@ def _refresh_sf():
     version = API_VERSION
 
     
+    domain = login_config.get("DOMAIN")
+    
     username = login_config.get("USERNAME") or get_var("USERNAME", "ENV")
     password = login_config.get("PASSWORD") or get_var("PASSWORD", "ENV")
     security_token = login_config.get("SECURITY_TOKEN") or get_var("SECURITY_TOKEN", "ENV")
-    domain = login_config.get("DOMAIN")
     
-    instance = login_config.get("INSTANCE")
     client_id = login_config.get("CLIENT_ID")
     client_secret = login_config.get("CLIENT_SECRET")
     access_token = None
-
-    if request.authorization:
-        auth = request.authorization
-    elif client_secret and client_id and instance:
-        payload = {'grant_type': "client_credentials",
-                'client_id': client_id,
-                'client_secret': client_secret
-                }
-        auth_response = requests.post(url=f"https://{instance}/services/oauth2/token", data=payload)
-        access_token = json.loads(auth_response.text).get("access_token")
 
     sf = Salesforce(username=username, 
                     password=password, 
                     security_token=security_token,
                     domain=domain, 
+                    consumer_secret=client_secret,
+                    consumer_key=client_id,
                     version=API_VERSION,
-                    instance=instance,
                     session_id=access_token)
 
     return sf
@@ -324,6 +308,18 @@ def get_path_for_valueset(req):
         return path
     else:
         return request.path.replace("/ValueSet", "")
+
+def respond_with_error(err):
+    logger.exception(err)
+
+    response_with_status = 500
+    if hasattr(err, "status"):
+        response_with_status = err.status 
+    elif isinstance(err, SalesforceAuthenticationFailed):
+        response_with_status = 401
+    
+    return Response(str(err), mimetype='plain/text', status=response_with_status)
+
 
 @app.route('/ValueSet', methods=["GET"], endpoint="get_valueset_all")
 @app.route('/ValueSet/', methods=["GET"], endpoint="get_valueset_all/")
@@ -360,14 +356,8 @@ def valueset_execute(sf_id_or_alias=None):
             output_list.append(response_data)
         return Response(json.dumps(output_list), mimetype='application/json', status=200)
 
-    except SalesforceError as err:
-        logger.exception(err)
-        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
-            mimetype='application/json',
-            status=err.status)
     except Exception as err:
-        logger.exception(err)
-        return Response(str(err), mimetype='plain/text', status=500)
+        return respond_with_error(err)
 
 @app.route('/ValueSet', methods=["POST"], endpoint="valueset_by_path_field")
 @app.route('/ValueSet/', methods=["POST"], endpoint="valueset_by_path_field/")
@@ -424,14 +414,8 @@ def valueset_execute_non_get(sf_id_or_alias=None):
                 data=_updatable(patch_data))
         return Response("", mimetype='application/json', status=200)
 
-    except SalesforceError as err:
-        logger.exception(err)
-        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
-            mimetype='application/json',
-            status=err.status)
     except Exception as err:
-        logger.exception(err)
-        return Response(str(err), mimetype='plain/text', status=500)
+        return respond_with_error(err)
 
 
 @app.route('/sf/tooling/<path:path>', methods=["GET", "POST", "DELETE", "PATCH", "PUT"], endpoint="tooling_execute")
@@ -448,14 +432,8 @@ def tooling_execute(path):
             return Response(json.dumps(data_access_layer.sesamify(response_json)), mimetype='application/json')
         else:
             return Response(json.dumps(response_json), mimetype='application/json')
-    except SalesforceError as err:
-        logger.exception(err)
-        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
-            mimetype='application/json',
-            status=err.status)
     except Exception as err:
-        logger.exception(err)
-        return Response(str(err), mimetype='plain/text', status=500)
+        return respond_with_error(err)
 
 @app.route('/sf/rest/<path:path>', methods=['GET', 'POST', 'DELETE', 'PATCH'], endpoint="restful")
 @app.route('/services/restful/<path:path>', methods=['GET', 'POST', 'DELETE', 'PATCH'], endpoint="restful")
@@ -470,13 +448,8 @@ def restful(path=None):
         elif request.endpoint == "apexrest":
             response_data = sf.apexecute(action=path, method=request.method, data=data, params=request.args)
         return Response(json.dumps(response_data), mimetype='application/json')
-    except SalesforceError as err:
-        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
-            mimetype='application/json',
-            status=err.status)
     except Exception as err:
-        logger.exception(err)
-        return Response(str(err), mimetype='plain/text', status=500)
+        return respond_with_error(err)
 
 
 @app.route('/<datatype>', methods=['GET'], endpoint="get_all")
@@ -492,15 +465,11 @@ def get_entities(datatype, objectkey=None, ext_id_field=None, ext_id=None):
         query_config={"filters": filters, "extra_attributes": extra_attributes}
         if request.endpoint == "get_by_ext_id":
             objectkey = f"{ext_id_field}/{ext_id}"
+        data_access_layer.reload_fields_metadata(sf, datatype)
         entities = data_access_layer.get_entities(sf, datatype, query_config, objectkey)
         return Response(response=entities, mimetype='application/json')
-    except SalesforceError as err:
-        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
-            mimetype='application/json',
-            status=err.status)
     except Exception as err:
-        logger.exception(err)
-        return Response(str(err), mimetype='plain/text', status=500)
+        return respond_with_error(err)
 
 @app.route('/<datatype>', methods=["POST", "PUT", "PATCH", "DELETE"], endpoint = "crud_all")
 @app.route('/<datatype>/<objectkey>', methods=['POST', "PUT", "PATCH", "DELETE"], endpoint="crud_by_id")
@@ -516,21 +485,20 @@ def receiver(datatype, objectkey=None, ext_id_field=None, ext_id=None):
             do_create_if_key_is_empty = request.args.get("do_create_if_key_is_empty","").lower() in ["true","1"]
             transform(datatype, entities, sf, operation_in=request.method, objectkey_in=objectkey, do_create_if_key_is_empty=do_create_if_key_is_empty)
         return Response("", mimetype='application/json')
-    except SalesforceError as err:
-        logger.exception(err)
-        return Response(json.dumps({"resource_name": err.resource_name, "content": err.content, "url": err.url}),
-            mimetype='application/json',
-            status=err.status)
     except Exception as err:
-        logger.exception(err)
-        return Response(str(err), mimetype='plain/text', status=500)
+        return respond_with_error(err)
 
 if __name__ == '__main__':
     PORT = int(get_var('PORT', "ENV") or 5000)
+    LOG_LEVEL = logging.getLevelName(get_var('LOG_LEVEL', "ENV") or "INFO")
+    logging.basicConfig(level=LOG_LEVEL, format='%(name)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger('salesforce')
+
+
     login_config = json.loads(get_var("LOGIN_CONFIG", "ENV"))
-    if {"USERNAME", "PASSWORD", "SECURITY_TOKEN"}.issubset(set(login_config.keys())):
+    if {"DOMAIN", "USERNAME", "PASSWORD", "SECURITY_TOKEN"}.issubset(set(login_config.keys())):
         logger.info("Starting up with OAuth 2.0 Username-Password Flow (USERNAME={})".format({login_config.get("USERNAME")}))
-    elif {"INSTANCE", "CLIENT_ID", "CLIENT_SECRET"}.issubset(set(login_config.keys())):  
+    elif {"DOMAIN", "CLIENT_ID", "CLIENT_SECRET"}.issubset(set(login_config.keys())):  
         logger.info(f"Starting up with OAuth 2.0 Client Credentials Flow")
     else:
         raise Exception("Incomplete LOGIN_CONFIG definition!")
@@ -538,4 +506,9 @@ if __name__ == '__main__':
     if get_var("WEBFRAMEWORK", "ENV") == "FLASK":
         app.run(debug=True, host='0.0.0.0', port=PORT)
     else:
-        serve(app, port=PORT)
+        from waitress import serve
+        from paste.translogger import TransLogger
+
+        format = '"%(REQUEST_METHOD)s %(REQUEST_URI)s %(HTTP_VERSION)s" %(status)s %(bytes)s'
+        time_format = "%Y-%m-%dT%H:%M:%S "
+        serve(TransLogger(app, format=format, time_format=time_format), host="0.0.0.0", port=PORT)

@@ -10,17 +10,17 @@ Sesam-Salesforce connector that can be used to:
 
 <table><tr><th>CONFIG_NAME        </th><th> DESCRIPTION           </th><th> IS_REQUIRED  </th><th>DEFAULT_VALUE</th></tr>
 <tr><td> SF_OBJECTS_CONFIG </td><td> dict for object level customizations. see schemas section for description. </td><td> no </td><td> n/a </td></tr>
-<tr><td> LOGIN_CONFIG </td><td> a dict either with keys<br> - <em>INSTANCE, CLIENT_ID, CLIENT_SECRET</em> <br>
+<tr><td> LOGIN_CONFIG </td><td> a dict either with keys<br> - <em>DOMAIN, CLIENT_ID, CLIENT_SECRET</em> <br>
 Fex  
 	
 ```json
 {
   "CLIENT_ID": "<MY_CLIENT_ID>",
   "CLIENT_SECRET": "<MY_CLIENT_SECRET>",
-  "INSTANCE": "myinstance.sandbox.my.salesforce.com"
+  "DOMAIN":"myinstance.sandbox.my"
 }
 ```
-, or <br><br> - _USERNAME, PASSWORD, SECURITY_TOKEN, and optionally DOMAIN_(defaults to 'Login' if not set),<br>
+, or <br><br> - _USERNAME, PASSWORD, SECURITY_TOKEN, and DOMAIN_ (Salesforce-My domain),<br>
 Fex
 			
 ```json 
@@ -34,7 +34,7 @@ Fex
 
 </td><td> yes </td><td> n/a </td><tr>
 
-<tr><td> WEBFRAMEWORK </td><td> set to 'FLASK' to use flask, otherwise it will run on cherrypy </td><td> no </td><td> n/a </td></tr>
+<tr><td> WEBFRAMEWORK </td><td> set to 'FLASK' to use flask, otherwise it will run on waitress </td><td> no </td><td> n/a </td></tr>
 <tr><td> LOG_LEVEL </td><td> LOG_LEVEL. one of [CRITICAL\|ERROR\|WARNING\|INFO\|DEBUG] </td><td> no </td><td> 'INFO' </td></tr>
 <tr><td> VALUESET_LIST </td><td> a dict where keys are the aliases to be used in sesam and values are the paths to the corresponding valueset. Used when fetching all valusets and for patching. 
 	<br>Fex
@@ -56,7 +56,7 @@ Fex
 
     By default _Id_ is used to match target object. If _Id_ is not available to Sesam, the _SF_OBJECTS_CONFIG_ envvar can be configured for alternative match keys.
 
-    * "GET": returns all data(upserted and deleted) of type _datatype_. Response is streamed, thus the response will give 200 status but malformed body when error is encountered._Id_ and _SystemModstamp_ is set as _\_id_ and _\_updated_, respectively.
+    * "GET": returns all data(upserted and deleted) of type _datatype_. Response is streamed, thus, the response will give 200 status with a malformed body when error is encountered._Id_ and _SystemModstamp_ is set as _\_id_ and _\_updated_, respectively.
     * "POST", "PUT", "PATCH": upserts objects or deletes if _\_deleted_ is true. Accepts dict or list of dicts.
     * "DELETE": deletes incoming objects.
 
@@ -188,7 +188,6 @@ Example configs:
   "docker": {
     "environment": {
       "DEFAULT_BULK_SWITCH_THRESHOLD": 999,
-      "INSTANCE": "sandbox",
       "LOGIN_CONFIG": "$SECRET(salesforce_login_config)",
       "LOG_LEVEL": "DEBUG",
       "SF_OBJECTS_CONFIG": {
